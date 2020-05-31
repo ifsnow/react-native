@@ -122,7 +122,7 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
   upload: XMLHttpRequestEventTarget = new XMLHttpRequestEventTarget();
 
   _requestId: ?number;
-  _subscriptions: Array<*>;
+  _subscription: any;
 
   _aborted: boolean = false;
   _cachedResponse: Response;
@@ -263,8 +263,34 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
     return this._cachedResponse;
   }
 
+  _onEvents = body => {
+    const {eventName, args} = body;
+
+    switch (eventName) {
+      case 'didSendNetworkData':
+        this._didUploadProgress(args);
+        break;
+      case 'didReceiveNetworkResponse':
+        this._didReceiveResponse(args);
+        break;
+      case 'didReceiveNetworkData':
+        this._didReceiveData(args);
+        break;
+      case 'didReceiveNetworkIncrementalData':
+        this._didReceiveIncrementalData(args);
+        break;
+      case 'didReceiveNetworkDataProgress':
+        this._didReceiveDataProgress(args);
+        break;
+      case 'didCompleteNetworkResponse':
+        this._didCompleteResponse(args);
+        break;
+      default:
+    }
+  };
+
   // exposed for testing
-  __didCreateRequest(requestId: number): void {
+  _didCreateRequest = (requestId: number) => {
     this._requestId = requestId;
 
     XMLHttpRequest._interceptor &&
@@ -274,14 +300,12 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
         this._method || 'GET',
         this._headers,
       );
-  }
+  };
 
   // exposed for testing
-  __didUploadProgress(
-    requestId: number,
-    progress: number,
-    total: number,
-  ): void {
+  _didUploadProgress(args: [number, number, number]): void {
+    const [requestId, progress, total] = args;
+
     if (requestId === this._requestId) {
       this.upload.dispatchEvent({
         type: 'progress',
@@ -292,12 +316,14 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
     }
   }
 
-  __didReceiveResponse(
-    requestId: number,
-    status: number,
-    responseHeaders: ?Object,
-    responseURL: ?string,
-  ): void {
+  _didReceiveResponse(args: [number, number, ?Object, ?string]): void {
+    const [
+      requestId,
+      status,
+      responseHeaders = null,
+      responseURL = null,
+    ] = args;
+
     if (requestId === this._requestId) {
       this.status = status;
       this.setResponseHeaders(responseHeaders);
@@ -318,7 +344,9 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
     }
   }
 
-  __didReceiveData(requestId: number, response: string): void {
+  _didReceiveData(args: [number, string]): void {
+    const [requestId, response] = args;
+
     if (requestId !== this._requestId) {
       return;
     }
@@ -330,12 +358,9 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
       XMLHttpRequest._interceptor.dataReceived(requestId, response);
   }
 
-  __didReceiveIncrementalData(
-    requestId: number,
-    responseText: string,
-    progress: number,
-    total: number,
-  ) {
+  _didReceiveIncrementalData(args: [number, string, number, number]): void {
+    const [requestId, responseText, progress, total] = args;
+
     if (requestId !== this._requestId) {
       return;
     }
@@ -349,14 +374,12 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
       XMLHttpRequest._interceptor.dataReceived(requestId, responseText);
 
     this.setReadyState(this.LOADING);
-    this.__didReceiveDataProgress(requestId, progress, total);
+    this._didReceiveDataProgress([requestId, progress, total]);
   }
 
-  __didReceiveDataProgress(
-    requestId: number,
-    loaded: number,
-    total: number,
-  ): void {
+  _didReceiveDataProgress(args: [number, number, number]): void {
+    const [requestId, loaded, total] = args;
+
     if (requestId !== this._requestId) {
       return;
     }
@@ -369,11 +392,9 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
   }
 
   // exposed for testing
-  __didCompleteResponse(
-    requestId: number,
-    error: string,
-    timeOutError: boolean,
-  ): void {
+  _didCompleteResponse(args: [number, string, boolean]): void {
+    const [requestId, error, timeOutError] = args;
+
     if (requestId === this._requestId) {
       if (error) {
         if (this._responseType === '' || this._responseType === 'text') {
@@ -402,12 +423,10 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
   }
 
   _clearSubscriptions(): void {
-    (this._subscriptions || []).forEach(sub => {
-      if (sub) {
-        sub.remove();
-      }
-    });
-    this._subscriptions = [];
+    if (this._subscription) {
+      this._subscription.remove();
+      this._subscription = null;
+    }
   }
 
   getAllResponseHeaders(): ?string {
@@ -472,36 +491,7 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
     const incrementalEvents =
       this._incrementalEvents || !!this.onreadystatechange || !!this.onprogress;
 
-    this._subscriptions.push(
-      RCTNetworking.addListener('didSendNetworkData', args =>
-        this.__didUploadProgress(...args),
-      ),
-    );
-    this._subscriptions.push(
-      RCTNetworking.addListener('didReceiveNetworkResponse', args =>
-        this.__didReceiveResponse(...args),
-      ),
-    );
-    this._subscriptions.push(
-      RCTNetworking.addListener('didReceiveNetworkData', args =>
-        this.__didReceiveData(...args),
-      ),
-    );
-    this._subscriptions.push(
-      RCTNetworking.addListener('didReceiveNetworkIncrementalData', args =>
-        this.__didReceiveIncrementalData(...args),
-      ),
-    );
-    this._subscriptions.push(
-      RCTNetworking.addListener('didReceiveNetworkDataProgress', args =>
-        this.__didReceiveDataProgress(...args),
-      ),
-    );
-    this._subscriptions.push(
-      RCTNetworking.addListener('didCompleteNetworkResponse', args =>
-        this.__didCompleteResponse(...args),
-      ),
-    );
+    this._subscription = RCTNetworking.addListener('events', this._onEvents);
 
     let nativeResponseType: NativeResponseType = 'text';
     if (this._responseType === 'arraybuffer') {
@@ -524,8 +514,9 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
       nativeResponseType,
       incrementalEvents,
       this.timeout,
-      this.__didCreateRequest.bind(this),
+      this._didCreateRequest.bind(this),
       this.withCredentials,
+      true,
     );
   }
 

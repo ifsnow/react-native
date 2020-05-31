@@ -19,6 +19,8 @@ import type {NativeResponseType} from './XMLHttpRequest';
 import type {RequestBody} from './convertRequestBody';
 
 class RCTNetworking extends NativeEventEmitter {
+  _timeout: number = 0;
+
   constructor() {
     super(NativeNetworkingIOS);
   }
@@ -34,6 +36,7 @@ class RCTNetworking extends NativeEventEmitter {
     timeout: number,
     callback: (requestId: number) => void,
     withCredentials: boolean,
+    improvedEvent?: boolean = false,
   ) {
     const body = convertRequestBody(data);
     NativeNetworkingIOS.sendRequest(
@@ -44,8 +47,9 @@ class RCTNetworking extends NativeEventEmitter {
         headers,
         responseType,
         incrementalUpdates,
-        timeout,
+        timeout: timeout || this._timeout,
         withCredentials,
+        improvedEvent,
       },
       callback,
     );
@@ -57,6 +61,10 @@ class RCTNetworking extends NativeEventEmitter {
 
   clearCookies(callback: (result: boolean) => void) {
     NativeNetworkingIOS.clearCookies(callback);
+  }
+
+  setTimeout(timeout: number) {
+    this._timeout = timeout;
   }
 }
 
