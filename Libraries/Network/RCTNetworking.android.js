@@ -40,6 +40,8 @@ function generateRequestId(): number {
  * requestId to each network request that can be used to abort that request later on.
  */
 class RCTNetworking extends NativeEventEmitter {
+  _timeout: number = 0;
+
   constructor() {
     super(NativeNetworkingAndroid);
   }
@@ -55,6 +57,7 @@ class RCTNetworking extends NativeEventEmitter {
     timeout: number,
     callback: (requestId: number) => mixed,
     withCredentials: boolean,
+    improvedEvent?: boolean = false,
   ) {
     const body = convertRequestBody(data);
     if (body && body.formData) {
@@ -72,8 +75,9 @@ class RCTNetworking extends NativeEventEmitter {
       {...body, trackingName},
       responseType,
       incrementalUpdates,
-      timeout,
+      timeout || this._timeout,
       withCredentials,
+      improvedEvent,
     );
     callback(requestId);
   }
@@ -84,6 +88,10 @@ class RCTNetworking extends NativeEventEmitter {
 
   clearCookies(callback: (result: boolean) => any) {
     NativeNetworkingAndroid.clearCookies(callback);
+  }
+
+  setTimeout(timeout: number) {
+    this._timeout = timeout;
   }
 }
 

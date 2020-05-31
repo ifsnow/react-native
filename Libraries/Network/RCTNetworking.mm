@@ -144,6 +144,7 @@ static NSString *RCTGenerateFormBoundary()
 @implementation RCTNetworking
 {
   NSMutableDictionary<NSNumber *, RCTNetworkTask *> *_tasksByRequestID;
+  NSMutableDictionary<NSNumber *, NSNumber *> *_improvedEventsByRequestID;
   std::mutex _handlersLock;
   NSArray<id<RCTURLRequestHandler>> *_handlers;
   NSArray<id<RCTURLRequestHandler>> * (^_handlersProvider)(void);
@@ -169,6 +170,7 @@ RCT_EXPORT_MODULE()
     [_tasksByRequestID[requestID] cancel];
   }
   [_tasksByRequestID removeAllObjects];
+  [_improvedEventsByRequestID removeAllObjects];
   _handlers = nil;
   _requestHandlers = nil;
   _responseHandlers = nil;
@@ -181,7 +183,8 @@ RCT_EXPORT_MODULE()
            @"didSendNetworkData",
            @"didReceiveNetworkIncrementalData",
            @"didReceiveNetworkDataProgress",
-           @"didReceiveNetworkData"];
+           @"didReceiveNetworkData",
+           @"events"];
 }
 
 - (id<RCTURLRequestHandler>)handlerForRequest:(NSURLRequest *)request
@@ -505,13 +508,14 @@ RCT_EXPORT_MODULE()
       return;
     }
   }
-
-  [self sendEventWithName:@"didReceiveNetworkData" body:@[task.requestID, responseData]];
+    
+  [self sendEvent:@"didReceiveNetworkData" body:@[task.requestID, responseData] forTask:task];
 }
 
 - (void)sendRequest:(NSURLRequest *)request
        responseType:(NSString *)responseType
  incrementalUpdates:(BOOL)incrementalUpdates
+      improvedEvent:(BOOL)improvedEvent
      responseSender:(RCTResponseSenderBlock)responseSender
 {
   RCTAssertThread(_methodQueue, @"sendRequest: must be called on method queue");
@@ -519,7 +523,7 @@ RCT_EXPORT_MODULE()
   __block RCTNetworkTask *task;
   RCTURLRequestProgressBlock uploadProgressBlock = ^(int64_t progress, int64_t total) {
     NSArray *responseJSON = @[task.requestID, @((double)progress), @((double)total)];
-    [weakSelf sendEventWithName:@"didSendNetworkData" body:responseJSON];
+    [weakSelf sendEvent:@"didSendNetworkData" body:responseJSON forTask:task];
   };
 
   RCTURLRequestResponseBlock responseBlock = ^(NSURLResponse *response) {
@@ -535,7 +539,7 @@ RCT_EXPORT_MODULE()
     }
     id responseURL = response.URL ? response.URL.absoluteString : [NSNull null];
     NSArray<id> *responseJSON = @[task.requestID, @(status), headers, responseURL];
-    [weakSelf sendEventWithName:@"didReceiveNetworkResponse" body:responseJSON];
+    [weakSelf sendEvent:@"didReceiveNetworkResponse" body:responseJSON forTask:task];
   };
 
   // XHR does not allow you to peek at xhr.response before the response is
@@ -568,12 +572,12 @@ RCT_EXPORT_MODULE()
                                       @(progress + initialCarryLength - incrementalDataCarry.length),
                                       @(total)];
 
-        [weakSelf sendEventWithName:@"didReceiveNetworkIncrementalData" body:responseJSON];
+        [weakSelf sendEvent:@"didReceiveNetworkIncrementalData" body:responseJSON forTask:task];
       };
     } else {
       downloadProgressBlock = ^(int64_t progress, int64_t total) {
         NSArray<id> *responseJSON = @[task.requestID, @(progress), @(total)];
-        [weakSelf sendEventWithName:@"didReceiveNetworkDataProgress" body:responseJSON];
+        [weakSelf sendEvent:@"didReceiveNetworkDataProgress" body:responseJSON forTask:task];
       };
     }
   }
@@ -598,8 +602,9 @@ RCT_EXPORT_MODULE()
                               error.code == kCFURLErrorTimedOut ? @YES : @NO
                               ];
 
-    [strongSelf sendEventWithName:@"didCompleteNetworkResponse" body:responseJSON];
+    [strongSelf sendEvent:@"didCompleteNetworkResponse" body:responseJSON forTask:task];
     [strongSelf->_tasksByRequestID removeObjectForKey:task.requestID];
+    [strongSelf->_improvedEventsByRequestID removeObjectForKey:task.requestID];
   };
 
   task = [self networkTaskWithRequest:request completionBlock:completionBlock];
@@ -613,10 +618,33 @@ RCT_EXPORT_MODULE()
       _tasksByRequestID = [NSMutableDictionary new];
     }
     _tasksByRequestID[task.requestID] = task;
+
+    if (improvedEvent) {
+      if (!_improvedEventsByRequestID) {
+        _improvedEventsByRequestID = [NSMutableDictionary new];
+      }
+      _improvedEventsByRequestID[task.requestID] = @YES;
+    }
+
     responseSender(@[task.requestID]);
   }
 
   [task start];
+}
+
+- (void)sendEvent:(NSString *)eventName
+             body:(NSArray *)body
+          forTask:(RCTNetworkTask *)task
+{
+  if (_improvedEventsByRequestID[task.requestID]) {
+    NSDictionary *eventsBody = @{
+                                @"eventName": eventName,
+                                @"args": body
+                               };
+    [self sendEventWithName:@"events" body:eventsBody];
+  } else {
+    [self sendEventWithName:eventName body:body];
+  }
 }
 
 #pragma mark - Public API
@@ -673,9 +701,11 @@ RCT_EXPORT_METHOD(sendRequest:(NSDictionary *)query
   [self buildRequest:query completionBlock:^(NSURLRequest *request) {
     NSString *responseType = [RCTConvert NSString:query[@"responseType"]];
     BOOL incrementalUpdates = [RCTConvert BOOL:query[@"incrementalUpdates"]];
+    BOOL improvedEvent = [RCTConvert BOOL:query[@"improvedEvent"]];
     [self sendRequest:request
          responseType:responseType
    incrementalUpdates:incrementalUpdates
+        improvedEvent:improvedEvent
        responseSender:responseSender];
   }];
 }

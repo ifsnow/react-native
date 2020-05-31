@@ -235,8 +235,11 @@ public final class NetworkingModule extends ReactContextBaseJavaModule {
       final String responseType,
       final boolean useIncrementalUpdates,
       int timeout,
-      boolean withCredentials) {
+      boolean withCredentials,
+      boolean useImprovedEvent) {
     try {
+      ResponseUtil.setImprovedEvent(requestId, useImprovedEvent);
+
       sendRequestInternal(
           method,
           url,
