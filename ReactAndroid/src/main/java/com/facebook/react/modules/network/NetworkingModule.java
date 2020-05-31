@@ -239,6 +239,7 @@ public final class NetworkingModule extends NativeNetworkingAndroidSpec {
       boolean withCredentials) {
     int requestId = (int) requestIdAsDouble;
     int timeout = (int) timeoutAsDouble;
+    
     try {
       sendRequestInternal(
           method,

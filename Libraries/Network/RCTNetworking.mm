@@ -184,7 +184,8 @@ RCT_EXPORT_MODULE()
            @"didSendNetworkData",
            @"didReceiveNetworkIncrementalData",
            @"didReceiveNetworkDataProgress",
-           @"didReceiveNetworkData"];
+           @"didReceiveNetworkData",
+           @"events"];
 }
 
 - (id<RCTURLRequestHandler>)handlerForRequest:(NSURLRequest *)request
@@ -508,8 +509,8 @@ RCT_EXPORT_MODULE()
       return;
     }
   }
-
-  [self sendEventWithName:@"didReceiveNetworkData" body:@[task.requestID, responseData]];
+    
+  [self sendEvent:@"didReceiveNetworkData" body:@[task.requestID, responseData] forTask:task];
 }
 
 - (void)sendRequest:(NSURLRequest *)request
@@ -522,7 +523,7 @@ RCT_EXPORT_MODULE()
   __block RCTNetworkTask *task;
   RCTURLRequestProgressBlock uploadProgressBlock = ^(int64_t progress, int64_t total) {
     NSArray *responseJSON = @[task.requestID, @((double)progress), @((double)total)];
-    [weakSelf sendEventWithName:@"didSendNetworkData" body:responseJSON];
+    [weakSelf sendEvent:@"didSendNetworkData" body:responseJSON forTask:task];
   };
 
   RCTURLRequestResponseBlock responseBlock = ^(NSURLResponse *response) {
@@ -538,7 +539,7 @@ RCT_EXPORT_MODULE()
     }
     id responseURL = response.URL ? response.URL.absoluteString : [NSNull null];
     NSArray<id> *responseJSON = @[task.requestID, @(status), headers, responseURL];
-    [weakSelf sendEventWithName:@"didReceiveNetworkResponse" body:responseJSON];
+    [weakSelf sendEvent:@"didReceiveNetworkResponse" body:responseJSON forTask:task];
   };
 
   // XHR does not allow you to peek at xhr.response before the response is
@@ -571,12 +572,12 @@ RCT_EXPORT_MODULE()
                                       @(progress + initialCarryLength - incrementalDataCarry.length),
                                       @(total)];
 
-        [weakSelf sendEventWithName:@"didReceiveNetworkIncrementalData" body:responseJSON];
+        [weakSelf sendEvent:@"didReceiveNetworkIncrementalData" body:responseJSON forTask:task];
       };
     } else {
       downloadProgressBlock = ^(int64_t progress, int64_t total) {
         NSArray<id> *responseJSON = @[task.requestID, @(progress), @(total)];
-        [weakSelf sendEventWithName:@"didReceiveNetworkDataProgress" body:responseJSON];
+        [weakSelf sendEvent:@"didReceiveNetworkDataProgress" body:responseJSON forTask:task];
       };
     }
   }
@@ -601,7 +602,7 @@ RCT_EXPORT_MODULE()
                               error.code == kCFURLErrorTimedOut ? @YES : @NO
                               ];
 
-    [strongSelf sendEventWithName:@"didCompleteNetworkResponse" body:responseJSON];
+    [strongSelf sendEvent:@"didCompleteNetworkResponse" body:responseJSON forTask:task];
     [strongSelf->_tasksByRequestID removeObjectForKey:task.requestID];
   };
 
@@ -616,10 +617,22 @@ RCT_EXPORT_MODULE()
       _tasksByRequestID = [NSMutableDictionary new];
     }
     _tasksByRequestID[task.requestID] = task;
+
     responseSender(@[task.requestID]);
   }
 
   [task start];
+}
+
+- (void)sendEvent:(NSString *)eventName
+             body:(NSArray *)body
+          forTask:(RCTNetworkTask *)task
+{
+  NSDictionary *eventsBody = @{
+                              @"eventName": eventName,
+                              @"args": body
+                              };
+  [self sendEventWithName:@"events" body:eventsBody];
 }
 
 #pragma mark - Public API
