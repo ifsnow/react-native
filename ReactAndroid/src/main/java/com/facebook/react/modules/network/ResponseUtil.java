@@ -14,11 +14,45 @@ import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEm
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.util.HashSet;
 
 /**
  * Util methods to send network responses to JS.
  */
 public class ResponseUtil {
+  private static final HashSet<Integer> sImprovedEventsByRequestId = new HashSet<>();
+
+  public static void setImprovedEvent(int requestId, boolean useImprovedEvent) {
+    if (useImprovedEvent) {
+      sImprovedEventsByRequestId.add(requestId);
+    }
+  }
+
+  public static void removeImprovedEvent(int requestId) {
+    sImprovedEventsByRequestId.remove(requestId);
+  }
+
+  private static boolean isImprovedEventEnabled(int requestId) {
+    return sImprovedEventsByRequestId.contains(requestId);
+  }
+
+  public static void sendEvent(
+      RCTDeviceEventEmitter eventEmitter, int requestId, String eventName, WritableArray args) {
+    if (eventEmitter == null) {
+      return;
+    }
+
+    if (isImprovedEventEnabled(requestId)) {
+      WritableMap eventArgs = Arguments.createMap();
+      eventArgs.putString("eventName", eventName);
+      eventArgs.putArray("args", args);
+
+      eventEmitter.emit("events", eventArgs);
+    } else {
+      eventEmitter.emit(eventName, args);
+    }
+  }
+  
   public static void onDataSend(
     RCTDeviceEventEmitter eventEmitter,
     int requestId,
@@ -28,7 +62,8 @@ public class ResponseUtil {
     args.pushInt(requestId);
     args.pushInt((int) progress);
     args.pushInt((int) total);
-    eventEmitter.emit("didSendNetworkData", args);
+
+    sendEvent(eventEmitter, requestId, "didSendNetworkData", args);
   }
 
   public static void onIncrementalDataReceived(
@@ -43,7 +78,7 @@ public class ResponseUtil {
     args.pushInt((int) progress);
     args.pushInt((int) total);
 
-    eventEmitter.emit("didReceiveNetworkIncrementalData", args);
+    sendEvent(eventEmitter, requestId, "didReceiveNetworkIncrementalData", args);
   }
 
   public static void onDataReceivedProgress(
@@ -56,7 +91,7 @@ public class ResponseUtil {
     args.pushInt((int) progress);
     args.pushInt((int) total);
 
-    eventEmitter.emit("didReceiveNetworkDataProgress", args);
+    sendEvent(eventEmitter, requestId, "didReceiveNetworkDataProgress", args);
   }
 
   public static void onDataReceived(
@@ -67,7 +102,7 @@ public class ResponseUtil {
     args.pushInt(requestId);
     args.pushString(data);
 
-    eventEmitter.emit("didReceiveNetworkData", args);
+    sendEvent(eventEmitter, requestId, "didReceiveNetworkData", args);
   }
 
   public static void onDataReceived(
@@ -78,7 +113,7 @@ public class ResponseUtil {
     args.pushInt(requestId);
     args.pushMap(data);
 
-    eventEmitter.emit("didReceiveNetworkData", args);
+    sendEvent(eventEmitter, requestId, "didReceiveNetworkData", args);
   }
 
   public static void onRequestError(
@@ -94,7 +129,8 @@ public class ResponseUtil {
       args.pushBoolean(true); // last argument is a time out boolean
     }
 
-    eventEmitter.emit("didCompleteNetworkResponse", args);
+    sendEvent(eventEmitter, requestId, "didCompleteNetworkResponse", args);
+    removeImprovedEvent(requestId);
   }
 
   public static void onRequestSuccess(RCTDeviceEventEmitter eventEmitter, int requestId) {
@@ -102,7 +138,8 @@ public class ResponseUtil {
     args.pushInt(requestId);
     args.pushNull();
 
-    eventEmitter.emit("didCompleteNetworkResponse", args);
+    sendEvent(eventEmitter, requestId, "didCompleteNetworkResponse", args);
+    removeImprovedEvent(requestId);
   }
 
   public static void onResponseReceived(
@@ -117,6 +154,6 @@ public class ResponseUtil {
     args.pushMap(headers);
     args.pushString(url);
 
-    eventEmitter.emit("didReceiveNetworkResponse", args);
+    sendEvent(eventEmitter, requestId, "didReceiveNetworkResponse", args);
   }
 }

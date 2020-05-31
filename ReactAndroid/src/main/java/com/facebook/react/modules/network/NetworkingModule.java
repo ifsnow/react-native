@@ -261,10 +261,21 @@ public final class NetworkingModule extends ReactContextBaseJavaModule {
       final String responseType,
       final boolean useIncrementalUpdates,
       int timeout,
-      boolean withCredentials) {
+      boolean withCredentials,
+      boolean useImprovedEvent) {
     try {
-      sendRequestInternal(method, url, requestId, headers, data, responseType,
-        useIncrementalUpdates, timeout, withCredentials);
+      ResponseUtil.setImprovedEvent(requestId, useImprovedEvent);
+
+      sendRequestInternal(
+          method,
+          url,
+          requestId,
+          headers,
+          data,
+          responseType,
+          useIncrementalUpdates,
+          timeout,
+          withCredentials);
     } catch (Throwable th) {
       FLog.e(TAG, "Failed to send url request: " + url, th);
       ResponseUtil.onRequestError(getEventEmitter(), requestId, th.getMessage(), th);
