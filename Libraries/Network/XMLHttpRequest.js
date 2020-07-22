@@ -533,9 +533,8 @@ class XMLHttpRequest extends (EventTarget(...XHR_EVENTS): any) {
         nativeResponseType,
         incrementalEvents,
         this.timeout,
-        this.__didCreateRequest.bind(this),
+        this._didCreateRequest.bind(this),
         this.withCredentials,
-        true,
       );
     };
     if (DEBUG_NETWORK_SEND_DELAY) {
